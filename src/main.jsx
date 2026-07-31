@@ -13,18 +13,24 @@ const today = () => {
 const WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const CATEGORIES = ['Study', 'Practice', 'Break', 'Personal'];
+const CLASS_DEFAULT = [
+  { id: 'c1', start: '04:30', end: '06:30', title: 'Wake Up', category: 'Study' },
+  { id: 'c2', start: '06:30', end: '07:00', title: 'Get Ready', category: 'Personal' },
+  { id: 'c3', start: '07:00', end: '08:00', title: 'any HWs', category: 'Study' },
+  { id: 'c4', start: '08:00', end: '08:30', title: 'Breakfast', category: 'Personal' },
+  { id: 'c5', start: '19:00', end: '20:30', title: 'Study', category: 'Study' },
+  { id: 'c6', start: '20:30', end: '21:00', title: 'Light Dinner', category: 'Break' },
+  { id: 'c7', start: '21:00', end: '10:10', title: 'Gym', category: 'Personal' }
+];
 const initial = {
+  _v: 2,
   habits: [
     { id: 'h1', name: 'Morning revision', target: 30, unit: 'min', dates: {} },
     { id: 'h2', name: 'Exercise', target: 20, unit: 'min', dates: {} },
     { id: 'h3', name: 'Read', target: 15, unit: 'pages', dates: {} }
   ],
   sessions: [],
-  defaultTimetable: [
-    { id: 't1', start: '07:00', end: '08:00', title: 'Morning revision', category: 'Study' },
-    { id: 't2', start: '10:00', end: '12:00', title: 'Deep study block', category: 'Study' },
-    { id: 't3', start: '17:00', end: '18:00', title: 'Practice questions', category: 'Practice' }
-  ],
+  defaultTimetable: CLASS_DEFAULT.map(e => ({ ...e })),
   offdayTimetable: [
     { id: 'o1', start: '09:00', end: '10:30', title: 'Light revision', category: 'Study' }
   ],
@@ -40,6 +46,7 @@ function load() {
     d.dayOff = d.dayOff || {};
     d.dayTimetables = d.dayTimetables || {};
     d.completed = d.completed || {};
+    if (d._v !== 2) { d.defaultTimetable = CLASS_DEFAULT.map(e => ({ ...e })); d._v = 2; }
     return d;
   } catch { return initial; }
 }
