@@ -23,12 +23,14 @@ const CLASS_DEFAULT = [
   { id: 'c7', start: '21:00', end: '10:10', title: 'Gym', category: 'Personal' }
 ];
 const initial = {
-  _v: 3,
-  habits: [
-    { id: 'h1', name: 'Morning revision', target: 30, unit: 'min', dates: {} },
-    { id: 'h2', name: 'Exercise', target: 20, unit: 'min', dates: {} },
-    { id: 'h3', name: 'Read', target: 15, unit: 'pages', dates: {} }
+  _v: 4,
+  defaultHabits: [
+    { id: 'h1', name: 'Morning revision' },
+    { id: 'h2', name: 'Exercise' },
+    { id: 'h3', name: 'Read' }
   ],
+  habitDefaults: [],
+  habitDone: {},
   sessions: [],
   studyLog: {},
   defaultTimetable: CLASS_DEFAULT.map(e => ({ ...e })),
@@ -48,12 +50,26 @@ function load() {
     d.dayTimetables = d.dayTimetables || {};
     d.completed = d.completed || {};
     d.studyLog = d.studyLog || {};
+    if (Array.isArray(d.habits)) {
+      if (!d.defaultHabits) d.defaultHabits = d.habits.map(h => ({ id: h.id, name: h.name }));
+      d.habitDone = d.habitDone || {};
+      d.habits.forEach(h => Object.keys(h.dates || {}).forEach(ds => { if ((h.dates[ds] || 0) >= (h.target || 1)) d.habitDone[ds] = { ...(d.habitDone[ds] || {}), [h.id]: true }; }));
+    }
+    delete d.habits;
+    d.defaultHabits = d.defaultHabits || [];
+    d.habitDefaults = d.habitDefaults || [];
+    d.habitDone = d.habitDone || {};
     if (!d._v) { d.defaultTimetable = CLASS_DEFAULT.map(e => ({ ...e })); }
-    d._v = 3;
+    d._v = 4;
     return d;
   } catch { return initial; }
 }
 function save(data) { localStorage.setItem('study-dashboard-data', JSON.stringify(data)); }
+const effectiveHabitsFor = (data, d) => {
+  let best = null;
+  (data.habitDefaults || []).forEach(en => { if (en.from <= d && (!best || en.from > best.from)) best = en; });
+  return best ? best.habits : (data.defaultHabits || []);
+};
 function Card({ title, value, note, children }) { return <section className="card"><p className="eyebrow">{title}</p><strong className="metric">{value}</strong>{note && <p className="muted">{note}</p>}{children}</section>; }
 function Progress({ value }) { return <div className="progress"><span style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></div>; }
 function Calendar({ month, onMonth, todayStr, selected, off, marks, onPick }) {
@@ -85,6 +101,9 @@ function App() {
   const [draft, setDraft] = useState([]);
   const [addForm, setAddForm] = useState({ start: '', end: '', title: '', category: 'Study' });
   const [now, setNow] = useState(Date.now());
+  const [editingHabits, setEditingHabits] = useState(false);
+  const [habitDraft, setHabitDraft] = useState([]);
+  const [newHabit, setNewHabit] = useState('');
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
   const update = (next) => { setData(next); save(next); };
   const isOff = !!data.dayOff[date];
@@ -95,7 +114,16 @@ function App() {
   const weeklyMinutes = weekDays.map(d => Math.round((data.sessions.filter(s => s.date === d).reduce((n, s) => n + Number(s.minutes), 0)) + (data.studyLog?.[d]?.hours || 0) * 60));
   const saveLog = (h, notes) => update({ ...data, studyLog: { ...data.studyLog, [date]: { hours: h, notes } } });
   const studyMarks = {}; Object.keys(data.studyLog || {}).forEach(ds => { studyMarks[ds] = true; });
-  const setHabit = (id, raw) => update({ ...data, habits: data.habits.map(h => h.id === id ? { ...h, dates: { ...h.dates, [date]: Math.max(0, Number(raw) || 0) } } : h) });
+  const effectiveHabits = effectiveHabitsFor(data, date);
+  const habitDoneCount = effectiveHabits.filter(h => data.habitDone?.[date]?.[h.id]).length;
+  const habitPct = effectiveHabits.length ? habitDoneCount / effectiveHabits.length * 100 : 0;
+  const habitMarks = {}; Object.keys(data.habitDone || {}).forEach(ds => { const list = effectiveHabitsFor(data, ds); if (list.length && list.filter(h => data.habitDone[ds]?.[h.id]).length === list.length) habitMarks[ds] = true; });
+  const toggleHabit = (id) => { const day = { ...(data.habitDone[date] || {}) }; day[id] = !day[id]; update({ ...data, habitDone: { ...data.habitDone, [date]: day } }); };
+  const startEditHabits = () => { setHabitDraft(effectiveHabits.map(h => ({ ...h }))); setEditingHabits(true); };
+  const patchHabitDraft = (id, name) => setHabitDraft(habitDraft.map(h => h.id === id ? { ...h, name } : h));
+  const removeHabitDraft = (id) => setHabitDraft(habitDraft.filter(h => h.id !== id));
+  const addHabitField = (e) => { e.preventDefault(); if (!newHabit.trim()) return; setHabitDraft([...habitDraft, { id: crypto.randomUUID(), name: newHabit.trim() }]); setNewHabit(''); };
+  const saveHabits = () => { const list = habitDraft.filter(h => h.name.trim()).map(h => ({ id: h.id, name: h.name.trim() })); update({ ...data, defaultHabits: list, habitDefaults: [...(data.habitDefaults || []), { from: date, habits: list }] }); setEditingHabits(false); };
   const importFile = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
@@ -120,7 +148,7 @@ function App() {
   return <div className="app-shell"><aside><div className="brand"><span>✦</span> Focusboard</div><p className="side-copy">A quiet place for your routine.</p><nav>{nav.map(n => <button className={page === n ? 'active' : ''} onClick={() => setPage(n)} key={n}>{n}</button>)}</nav><div className="side-footer">Private by default<br />Saved on this device</div></aside><main><header><div><p className="eyebrow">PERSONAL STUDY DASHBOARD</p><h1>{page === 'Timetable' ? 'Plan the day, then do it.' : page}</h1></div><div className="header-right"><label className="date"><span>Viewing</span><input type="date" value={date} onChange={e => pickDate(e.target.value)} /></label><span className="ist-clock">{istTime} IST</span></div></header>
   {page === 'Timetable' && <div className="timetable-layout"><div className="cal-col"><Calendar month={calMonth} onMonth={shiftMonth} todayStr={today()} selected={date} off={data.dayOff} marks={{}} onPick={pickDate} /><div className="cal-key"><span className="key-dot off" />Off day<span className="key-dot today" />Today</div></div><section className="panel"><div className="panel-head"><div><h2>Day plan</h2><p className="muted">{weekdayFull} · IST</p></div>{editing ? <button onClick={finishEdit}>Save day</button> : <button onClick={startEdit}>Edit day</button>}</div><div className="day-type"><button className={!isOff ? 'active' : ''} onClick={() => setDayType(false)}>Class day</button><button className={isOff ? 'active' : ''} onClick={() => setDayType(true)}>Off day</button></div><div className="day-actions"><button className="ghost" onClick={makeClassDefault}>Save as class-day default</button>{editing && data.dayTimetables[date] && <button className="ghost" onClick={resetDay}>Reset this day</button>}</div><div className="timetable-list">{(editing ? draft : effective).map(t => <div className={`schedule${!editing && data.completed[date]?.[t.id] ? ' done' : ''}`} key={t.id}>{editing ? <div className="times"><input className="time" type="time" value={t.start} onChange={e => patchDraft(t.id, 'start', e.target.value)} /><input className="time" type="time" value={t.end} onChange={e => patchDraft(t.id, 'end', e.target.value)} /></div> : <time>{t.start}<br />{t.end}</time>}<span className={`dot ${t.category.toLowerCase()}`} />{editing ? <div className="sch-body"><input className="title" value={t.title} onChange={e => patchDraft(t.id, 'title', e.target.value)} /><select className="cat" value={t.category} onChange={e => patchDraft(t.id, 'category', e.target.value)}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div> : <div><strong>{t.title}</strong><small>{t.category}</small></div>}<div className="sch-right"><input type="checkbox" aria-label={`Mark ${t.title} done`} checked={!!data.completed[date]?.[t.id]} onChange={() => toggleDone(t.id)} />{editing && <button className="ghost del" onClick={() => removeEntry(t.id)}>×</button>}</div></div>)}</div>{editing && <form className="form add-entry" onSubmit={addEntry}><input type="time" value={addForm.start} onChange={e => setAddForm({ ...addForm, start: e.target.value })} required /><input type="time" value={addForm.end} onChange={e => setAddForm({ ...addForm, end: e.target.value })} required /><input placeholder="Title" value={addForm.title} onChange={e => setAddForm({ ...addForm, title: e.target.value })} required /><select value={addForm.category} onChange={e => setAddForm({ ...addForm, category: e.target.value })}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select><button>Add</button></form>}{!editing && <p className="muted done-note">{doneCount} of {effective.length} completed for this day</p>}</section></div>}
   {page === 'Study' && <div className="timetable-layout"><Calendar month={calMonth} onMonth={shiftMonth} todayStr={today()} selected={date} off={data.dayOff} marks={studyMarks} onPick={pickDate} /><section className="panel"><div className="panel-head"><div><h2>Daily study log</h2><p className="muted">{weekdayFull} · IST</p></div></div><StudyLogForm log={data.studyLog?.[date]} onSave={saveLog} /></section></div>}
-  {page === 'Habits' && <section className="panel"><div className="panel-head"><div><h2>Habit tracker</h2><p className="muted">Enter today’s completed amount.</p></div><button onClick={() => { const name = prompt('New habit name'); if (name) update({ ...data, habits: [...data.habits, { id: crypto.randomUUID(), name, target: 1, unit: 'times', dates: {} }] }) }}>+ New habit</button></div><div className="habit-list">{data.habits.map(h => { const amount = h.dates[date] || 0; const pct = amount / h.target * 100; return <div className="habit" key={h.id}><div><strong>{h.name}</strong><small>Goal: {h.target} {h.unit}</small></div><div className="habit-progress"><Progress value={pct} /><span>{Math.round(Math.min(pct, 100))}%</span></div><input aria-label={`${h.name} amount`} type="number" min="0" value={amount} onChange={e => setHabit(h.id, e.target.value)} /></div> })}</div></section>}
+  {page === 'Habits' && <div className="habits-layout"><section className="panel"><div className="panel-head"><div><h2>Habit checklist</h2><p className="muted">{weekdayFull} · IST</p></div>{editingHabits ? <button onClick={saveHabits}>Save &amp; set as default</button> : <button onClick={startEditHabits}>Edit habits</button>}</div><p className="muted">{editingHabits ? 'Edit the list, then save it as the default from this day onward.' : 'Tick the habits you completed today.'}</p><div className="habit-checklist">{(editingHabits ? habitDraft : effectiveHabits).map(h => <div className={`habit-check${!editingHabits && data.habitDone?.[date]?.[h.id] ? ' done' : ''}`} key={h.id}><input type="checkbox" aria-label={h.name} checked={!!data.habitDone?.[date]?.[h.id]} onChange={() => toggleHabit(h.id)} disabled={editingHabits} />{editingHabits ? <><input className="title" value={h.name} onChange={e => patchHabitDraft(h.id, e.target.value)} />{habitDraft.length > 1 && <button className="ghost del" onClick={() => removeHabitDraft(h.id)}>×</button>}</> : <strong>{h.name}</strong>}</div>)}</div>{editingHabits && <form className="form add-habit" onSubmit={addHabitField}><input placeholder="New habit name" value={newHabit} onChange={e => setNewHabit(e.target.value)} required /><button>Add habit</button></form>}<div className="habit-total"><span>{habitDoneCount} of {effectiveHabits.length} completed today</span><div className="total-bar"><Progress value={habitPct} /></div><strong>{Math.round(habitPct)}%</strong></div></section><div className="cal-col"><Calendar month={calMonth} onMonth={shiftMonth} todayStr={today()} selected={date} off={data.dayOff} marks={habitMarks} onPick={pickDate} /><div className="cal-key"><span className="key-dot today" />All habits done</div></div></div>}
   {page === 'Reports' && <><div className="stats"><Card title="Weekly study" value={`${weeklyMinutes.reduce((a, b) => a + b, 0)} min`} note="Rolling seven days" /><Card title="Daily average" value={`${Math.round(weeklyMinutes.reduce((a, b) => a + b, 0) / 7)} min`} note="Rolling seven days" /><Card title="Sessions" value={data.sessions.length} note="All time" /></div><section className="panel"><div className="panel-head"><div><h2>Study rhythm</h2><p className="muted">Minutes logged during the last seven days</p></div></div><div className="bar-chart">{weeklyMinutes.map((v, i) => <div className="bar" key={weekDays[i]}><span>{v || ''}</span><i style={{ height: `${Math.max(4, v / chartMax * 100)}%` }} /><small>{WEEK[dateFromIST(weekDays[i]).getUTCDay()]}</small></div>)}</div></section></>}
   {page === 'Import & backup' && <div className="two-col"><section className="panel"><h2>Import a spreadsheet</h2><p className="muted">Import the first sheet of an .xlsx, .xls, or .csv file. Recognized columns: Date, Subject (or Task), and Minutes (or Duration).</p><label className="upload">Choose spreadsheet<input type="file" accept=".xlsx,.xls,.csv" onChange={importFile} /></label></section><section className="panel"><h2>Your data, your device</h2><p className="muted">Everything is stored in this browser’s local storage. Export a backup before clearing your browser data.</p><button onClick={() => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })); a.download = 'focusboard-backup.json'; a.click(); }}>Download backup</button></section></div>}
   </main></div>;
