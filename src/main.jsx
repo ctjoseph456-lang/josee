@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as XLSX from 'xlsx';
 import { addDays, Calendar, dateFromIST, today, WEEK, MONTHS } from './lib.jsx';
-import { Gym } from './gym.jsx';
+import { Gym, DEFAULT_PLAN } from './gym.jsx';
 import './styles.css';
 
 const CATEGORIES = ['Study', 'Practice', 'Break', 'Personal'];
@@ -22,8 +22,9 @@ const GYM_SEED = [
   { id: 'tp4', name: 'Upper', exercises: [{ name: 'Pull-up', muscle: 'Back', equipment: 'Bodyweight', restSec: 90, sets: [{ weight: 0, reps: 10 }, { weight: 0, reps: 8 }] }, { name: 'Bench Press', muscle: 'Chest', equipment: 'Barbell', restSec: 90, sets: [{ weight: 60, reps: 10 }, { weight: 60, reps: 8 }] }, { name: 'Lateral Raise', muscle: 'Shoulders', equipment: 'Dumbbell', restSec: 60, sets: [{ weight: 10, reps: 15 }, { weight: 10, reps: 12 }] }, { name: 'Dumbbell Curl', muscle: 'Biceps', equipment: 'Dumbbell', restSec: 60, sets: [{ weight: 12, reps: 12 }, { weight: 12, reps: 10 }] }] },
   { id: 'tp5', name: 'Full Body', exercises: [{ name: 'Squat', muscle: 'Legs', equipment: 'Barbell', restSec: 120, sets: [{ weight: 80, reps: 8 }, { weight: 80, reps: 8 }] }, { name: 'Bench Press', muscle: 'Chest', equipment: 'Barbell', restSec: 90, sets: [{ weight: 60, reps: 10 }, { weight: 60, reps: 8 }] }, { name: 'Barbell Row', muscle: 'Back', equipment: 'Barbell', restSec: 90, sets: [{ weight: 50, reps: 10 }, { weight: 50, reps: 10 }] }] }
 ];
+const GYM_PLAN = DEFAULT_PLAN;
 const initial = {
-  _v: 5,
+  _v: 7,
   defaultHabits: [
     { id: 'h1', name: 'Morning revision' },
     { id: 'h2', name: 'Exercise' },
@@ -40,7 +41,7 @@ const initial = {
   dayOff: {},
   dayTimetables: {},
   completed: {},
-  gym: { workouts: [], bodyWeight: [], templates: GYM_SEED, settings: { units: 'kg', dark: false } }
+  gym: { workouts: [], bodyWeight: [], templates: GYM_SEED, plan: JSON.parse(JSON.stringify(GYM_PLAN)), favorites: [], recent: [], custom: [], bmi: [], settings: { units: 'kg', dark: false } }
 };
 function load() {
   try {
@@ -65,8 +66,13 @@ function load() {
     d.gym.bodyWeight = d.gym.bodyWeight || [];
     d.gym.templates = (d.gym.templates && d.gym.templates.length ? d.gym.templates : GYM_SEED);
     d.gym.settings = d.gym.settings || { units: 'kg', dark: false };
+    d.gym.plan = d.gym.plan && d.gym.plan.monday ? d.gym.plan : JSON.parse(JSON.stringify(GYM_PLAN));
+    d.gym.favorites = d.gym.favorites || [];
+    d.gym.recent = d.gym.recent || [];
+    d.gym.custom = d.gym.custom || [];
+    d.gym.bmi = d.gym.bmi || [];
     if (!d._v) { d.defaultTimetable = CLASS_DEFAULT.map(e => ({ ...e })); }
-    d._v = 5;
+    d._v = 7;
     return d;
   } catch { return initial; }
 }
