@@ -10,10 +10,12 @@ const loadActive = () => { try { return JSON.parse(localStorage.getItem('focusbo
 const saveActive = (w) => { if (w) localStorage.setItem('focusboard-active-workout', JSON.stringify(w)); else localStorage.removeItem('focusboard-active-workout'); };
 const dispW = (kg, u) => { if (kg === '' || kg === null || kg === undefined) return ''; const v = u === 'lbs' ? kg * 2.2046226 : kg; return Math.round(v * 10) / 10; };
 const storeW = (v, u) => { const n = Number(v); if (!n || n < 0) return ''; const kg = u === 'lbs' ? n / 2.2046226 : n; return Math.round(kg * 100) / 100; };
-const prevSetsFor = (data, name) => {
-  const ws = data.gym.workouts || [];
-  for (let i = ws.length - 1; i >= 0; i--) {
-    const ex = (ws[i].exercises || []).find(e => String(e.name).toLowerCase() === String(name).toLowerCase());
+const prevWorkoutFor = (data, date, name) => {
+  const wd = dayKeyOf(date);
+  const ws = (data.gym.workouts || []).slice().reverse();
+  for (const w of ws) {
+    if (!w.date || dayKeyOf(w.date) !== wd) continue;
+    const ex = (w.exercises || []).find(e => String(e.name).toLowerCase() === String(name).toLowerCase());
     if (ex && ex.sets && ex.sets.length) return ex.sets;
   }
   return null;
@@ -25,7 +27,7 @@ const best1RMBefore = (data, name, uptoIndex) => { let b = 0; (data.gym.workouts
 const dayKeyOf = (d) => DAY_KEYS[dateFromIST(d).getUTCDay()];
 const restFor = (lib) => /compound|squat|hinge|lunge|olympic|carry/i.test(lib.movement) ? 120 : 60;
 const findEx = (data, name) => { const n = String(name).toLowerCase(); const c = (data.gym.custom || []).find(x => x.name.toLowerCase() === n); if (c) return c; return EXERCISES.find(x => x.name.toLowerCase() === n) || null; };
-const defaultSetsFor = (name) => { const lib = EXERCISES.find(x => x.name.toLowerCase() === String(name).toLowerCase()); const compound = lib && /compound|squat|hinge|lunge|olympic|carry/i.test(lib.movement); const n = compound ? 4 : 3; const reps = compound ? 8 : 12; return Array.from({ length: n }, () => ({ weight: '', reps })); };
+export const defaultSetsFor = (name) => { const lib = EXERCISES.find(x => x.name.toLowerCase() === String(name).toLowerCase()); const compound = lib && /compound|squat|hinge|lunge|olympic|carry/i.test(lib.movement); const reps = compound ? 8 : 12; return Array.from({ length: 2 }, () => ({ weight: '', reps })); };
 export const normalizePlan = (plan) => {
   const out = {};
   DAY_KEYS.forEach(k => {
@@ -103,11 +105,11 @@ export function Gym({ data, update }) {
   const focusFor = (list) => { const set = new Set(); list.forEach(en => { const e = findEx(data, en.name); if (e) set.add(e.primary); }); return [...set].join(' · ') || 'Rest day'; };
   const estMin = (list) => Math.max(1, Math.round((list.reduce((t, en) => { const lib = findEx(data, en.name) || {}; return t + en.sets.length * restFor(lib); }, 0) + list.length * 45) / 60));
 
-  const makeExercise = (entry) => {
+  const makeExercise = (entry, date) => {
     const name = entry.name;
     const lib = findEx(data, name) || { name, primary: 'Other', equipment: '', difficulty: 'Beginner', movement: 'Isolation', force: 'Pull', position: 'Standing', secondary: [] };
-    const prev = prevSetsFor(data, lib.name);
-    const def = entry.sets && entry.sets.length ? entry.sets : [{ weight: '', reps: '' }];
+    const prev = prevWorkoutFor(data, date, lib.name);
+    const def = entry.sets && entry.sets.length ? entry.sets : defaultSetsFor(name);
     const sets = prev && prev.length
       ? prev.map(s => ({ id: UID(), weight: s.weight, reps: s.reps, done: false }))
       : def.map(s => ({ id: UID(), weight: s.weight != null ? s.weight : '', reps: s.reps != null ? s.reps : '', done: false }));
@@ -117,20 +119,19 @@ export function Gym({ data, update }) {
   const startFromDay = (day) => {
     const list = planFor(day);
     if (!list.length) { showToast('This day has no exercises yet'); return; }
-    const w = { id: UID(), name: `${DAY_LABELS[DAY_KEYS.indexOf(day)]} workout`, date: today(), startTime: Date.now(), endTime: null, durationMin: 0, notes: '', exercises: list.map(makeExercise) };
+    const w = { id: UID(), name: `${DAY_LABELS[DAY_KEYS.indexOf(day)]} workout`, date: today(), startTime: Date.now(), endTime: null, durationMin: 0, notes: '', exercises: list.map(e => makeExercise(e, today())) };
     saveActive(w); setActive(w); setView('Start Workout'); showToast('Workout started — good luck!');
   };
   const startBlank = () => { const w = { id: UID(), name: '', date: today(), startTime: Date.now(), endTime: null, durationMin: 0, notes: '', exercises: [] }; saveActive(w); setActive(w); setView('Start Workout'); };
   const setActiveSave = (w) => { setActive(w); saveActive(w); };
-  const addToActive = (lib) => { const ex = makeExercise({ name: lib.name, sets: defaultSetsFor(lib.name) }); setActiveSave({ ...active, exercises: [...active.exercises, ex] }); showToast(`${lib.name} added`); };
+  const addToActive = (lib) => { const ex = makeExercise({ name: lib.name, sets: defaultSetsFor(lib.name) }, active.date); setActiveSave({ ...active, exercises: [...active.exercises, ex] }); showToast(`${lib.name} added`); };
   const deleteExercise = (id) => setActiveSave({ ...active, exercises: active.exercises.filter(e => e.id !== id) });
   const addSet = (exId) => setActiveSave({ ...active, exercises: active.exercises.map(e => e.id === exId ? { ...e, sets: [...e.sets, { id: UID(), weight: '', reps: '', done: false }] } : e) });
   const patchSet = (exId, setId, field, value) => setActiveSave({ ...active, exercises: active.exercises.map(e => e.id === exId ? { ...e, sets: e.sets.map(s => s.id === setId ? { ...s, [field]: value } : s) } : e) });
-  const patchEx = (exId, field, value) => setActiveSave({ ...active, exercises: active.exercises.map(e => e.id === exId ? { ...e, [field]: value } : e) });
   const removeSet = (exId, setId) => setActiveSave({ ...active, exercises: active.exercises.map(e => e.id === exId ? { ...e, sets: e.sets.filter(s => s.id !== setId) } : e) });
   const startRest = (exId, secs) => { setRest({ exId, end: Date.now() + secs * 1000, total: secs }); };
-  const enterNext = (e) => { if (e.key !== 'Enter') return; e.preventDefault(); const box = e.currentTarget.closest('.sets-body'); if (!box) return; const inputs = [...box.querySelectorAll('.set-input')]; const i = inputs.indexOf(e.target); if (i >= 0 && inputs[i + 1]) inputs[i + 1].focus(); };
-  const markDone = (exId, setId, done) => { patchSet(exId, setId, 'done', done); if (done) setTimeout(() => { const cards = [...document.querySelectorAll('.ex-card')]; const idx = cards.findIndex(c => c.dataset.exid === exId); if (idx < 0) return; const box = cards[idx].querySelector('.sets-body'); if (box) { const inputs = [...box.querySelectorAll('.set-input')]; const empty = inputs.find(i => i.value === '' || Number(i.value) === 0); (empty || inputs[0])?.focus(); } }, 40); };
+  const enterNext = (e) => { if (e.key !== 'Enter') return; e.preventDefault(); const row = e.currentTarget.closest('.wt-row'); if (!row) return; const inputs = [...row.querySelectorAll('.set-input')]; const i = inputs.indexOf(e.target); if (i >= 0 && inputs[i + 1]) inputs[i + 1].focus(); };
+  const markDone = (exId, setId, done) => { patchSet(exId, setId, 'done', done); if (done) setTimeout(() => { const row = [...document.querySelectorAll('.wt-row')].find(r => r.dataset.exid === exId); if (!row) return; const inputs = [...row.querySelectorAll('.set-input')]; const empty = inputs.find(i => i.value === '' || Number(i.value) === 0); (empty || inputs[0])?.focus(); }, 40); };
   const finishWorkout = () => { const a = active; const dur = Math.max(1, Math.round((Date.now() - a.startTime) / 60000)); const totalSets = a.exercises.reduce((t, ex) => t + ex.sets.length, 0); const totalReps = a.exercises.reduce((t, ex) => t + ex.sets.reduce((s, x) => s + (Number(x.reps) || 0), 0), 0); const vol = workoutVolume(a); const prs = a.exercises.filter(ex => (ex.sets || []).some(s => { const w = Number(s.weight) || 0; return w && w > bestWeightBefore(data, ex.name, data.gym.workouts.length); })).map(ex => ex.name); setSummary({ durationMin: dur, exercises: a.exercises.length, sets: totalSets, reps: totalReps, volume: vol, prs, calories: Math.round(dur * 5 + totalReps * 0.5) }); };
   const saveWorkout = () => { const a = { ...active, name: active.name || `Workout — ${active.date}`, durationMin: summary.durationMin, endTime: Date.now() }; updateGym({ ...data.gym, workouts: [...data.gym.workouts, a] }); saveActive(null); setActive(null); setSummary(null); setView('Reports'); showToast('Workout saved to Reports'); };
   const discardWorkout = () => { saveActive(null); setActive(null); setSummary(null); showToast('Workout discarded'); };
@@ -197,6 +198,7 @@ export function Gym({ data, update }) {
   const liveKg = active ? active.exercises.reduce((t, ex) => t + (ex.sets || []).reduce((s, x) => s + (Number(x.weight) || 0), 0), 0) : 0;
   const liveReps = active ? active.exercises.reduce((t, ex) => t + (ex.sets || []).reduce((s, x) => s + (Number(x.reps) || 0), 0), 0) : 0;
   const liveVol = active ? workoutVolume(active) : 0;
+  const maxSets = active ? Math.max(0, ...active.exercises.map(e => e.sets.length)) : 0;
   const restLeft = rest ? Math.max(0, Math.ceil((rest.end - restNow) / 1000)) : 0;
   const todayDay = dayKeyOf(today());
   const todayPlan = planFor(todayDay);
@@ -205,11 +207,11 @@ export function Gym({ data, update }) {
   const NAV = ['Start Workout', 'Edit Workout / Routine', 'Reports', 'BMI & Body Tracking'];
 
   const libModal = () => libOpen && <div className="gym-overlay" onClick={() => setLibOpen(null)}><div className="gym-modal" onClick={e => e.stopPropagation()}>
-    <div className="panel-head"><div><h2>Add exercise to {DAY_LABELS[DAY_KEYS.indexOf(libOpen.day)]}</h2><p className="muted">{libPool.length} exercises — tap one to add it to this day.</p></div><button className="ghost del" onClick={() => setLibOpen(null)}>×</button></div>
+    <div className="panel-head"><div><h2>Add exercise to {libOpen.mode === 'active' ? (active?.name || 'workout') : DAY_LABELS[DAY_KEYS.indexOf(libOpen.day)]}</h2><p className="muted">{libPool.length} exercises — tap one to add it {libOpen.mode === 'active' ? 'to this workout' : 'to this day'}.</p></div><button className="ghost del" onClick={() => setLibOpen(null)}>×</button></div>
     <input className="lib-search" placeholder="Search by name, muscle, equipment, keywords… e.g. bench, curl, lat, cable, rear" value={libQ2} onChange={e => setLibQ2(e.target.value)} />
     <div className="filters"><span className="filter-label">Muscle</span><div className="chips">{MUSCLES.map(m => <button key={m} className={`chip${libCats.includes(m) ? ' on' : ''}`} onClick={() => setLibCats(libCats.includes(m) ? libCats.filter(x => x !== m) : [...libCats, m])}>{m}</button>)}</div></div>
     <div className="filters"><span className="filter-label">More</span><div className="chips"><select className="cat" value={libEquip} onChange={e => setLibEquip(e.target.value)}><option>All</option>{EQUIPMENT.map(m => <option key={m}>{m}</option>)}</select><select className="cat" value={libDiff} onChange={e => setLibDiff(e.target.value)}><option>All</option>{DIFFICULTY.map(m => <option key={m}>{m}</option>)}</select><select className="cat" value={libMove} onChange={e => setLibMove(e.target.value)}><option>All</option>{MOVEMENT.map(m => <option key={m}>{m}</option>)}</select><select className="cat" value={libForce} onChange={e => setLibForce(e.target.value)}><option>All</option>{FORCE.map(m => <option key={m}>{m}</option>)}</select></div></div>
-    <div className="lib-grid modal">{libFiltered.map(e => <button className="lib-item" key={e.name + e.equipment} onClick={() => addToPlan(libOpen.day, e)}><strong>{e.name}</strong><small>{e.primary}{e.equipment ? ` · ${e.equipment}` : ''} · {e.difficulty}</small></button>)}</div>
+    <div className="lib-grid modal">{libFiltered.map(e => <button className="lib-item" key={e.name + e.equipment} onClick={() => libOpen.mode === 'active' ? addToActive(e) : addToPlan(libOpen.day, e)}><strong>{e.name}</strong><small>{e.primary}{e.equipment ? ` · ${e.equipment}` : ''} · {e.difficulty}</small></button>)}</div>
     {!libFiltered.length && <p className="muted">No matches — try another search.</p>}
   </div></div>;
 
@@ -227,7 +229,7 @@ export function Gym({ data, update }) {
 
     {view === 'Start Workout' && active && !summary && <>
       <div className="panel workout-head">
-        <div className="panel-head"><div><h2>{active.name || 'Workout'}</h2><p className="muted">{fmtDate(active.date)} · {DAY_LABELS[DAY_KEYS.indexOf(dayKeyOf(active.date))]} · {active.exercises.length} exercises · est. {estActiveMin} min</p></div><div className="row-actions"><button onClick={finishWorkout}>Finish workout</button></div></div>
+        <div className="panel-head"><div><h2>{active.name || 'Workout'}</h2><p className="muted">{fmtDate(active.date)} · {DAY_LABELS[DAY_KEYS.indexOf(dayKeyOf(active.date))]} · {active.exercises.length} exercises · est. {estActiveMin} min</p></div><div className="row-actions"><button className="ghost" onClick={() => setLibOpen({ mode: 'active' })}>+ Exercise</button><button onClick={finishWorkout}>Finish workout</button></div></div>
         <div className="workout-head-grid">
           <div className="field"><label>Workout name</label><input value={active.name} placeholder="e.g. Push A" onChange={e => setActiveSave({ ...active, name: e.target.value })} /></div>
           <div className="field"><label>Date</label><input type="date" value={active.date} onChange={e => setActiveSave({ ...active, date: e.target.value })} /></div>
@@ -237,24 +239,29 @@ export function Gym({ data, update }) {
         <div className="workout-totals"><span>Weight lifted <b>{Math.round(liveKg)} {units}</b></span><span>Reps <b>{liveReps}</b></span><span>Volume <b>{Math.round(liveVol)} {units}</b></span><span>Sets <b>{liveDone}/{liveSets}</b></span></div>
         <div className="workout-progress"><span className="wprog-label">Workout progress</span><div className="total-bar"><div className="fill" style={{ width: `${liveSets ? liveDone / liveSets * 100 : 0}%` }} /></div><strong>{Math.round(liveSets ? liveDone / liveSets * 100 : 0)}%</strong></div>
       </div>
-      {active.exercises.map((ex, ei) => { const done = ex.sets.filter(s => s.done).length; const best = bestWeightBefore(data, ex.name, data.gym.workouts.length); return <section className="panel ex-card" data-exid={ex.id} key={ex.id}>
-        <div className="panel-head"><div><h2>{ex.name} <span className="ex-count">{ei + 1}/{active.exercises.length}</span></h2><p className="muted">{ex.muscle}{ex.equipment ? ` · ${ex.equipment}` : ''}{best ? ` · best ${dispW(best, units)} ${units}` : ''}{rest && rest.exId === ex.id ? ` · Rest ${restLeft}s` : ''}</p></div><div className="row-actions"><span className="set-progress">{done}/{ex.sets.length} sets</span><button className="ghost" onClick={() => addToActive({ name: ex.name, primary: ex.muscle, equipment: ex.equipment })}>+</button><button className="ghost del" onClick={() => deleteExercise(ex.id)}>×</button></div></div>
-        {(() => { const prev = prevSetsFor(data, ex.name) || []; return <div className="sets-grid">
-          <div className="sets-head"><span>Set</span><span>Previous</span><span>Weight ({units})</span><span>Reps</span><span>Done</span></div>
-          <div className="sets-body">{ex.sets.map((s, si) => { const pw = prev[si]; const w = Number(s.weight) || 0; const r = Number(s.reps) || 0; const isPR = w > 0 && w > best; const is1PR = w > 0 && r > 0 && epley(w, r) > best1RMBefore(data, ex.name, data.gym.workouts.length); return <div className={`sets-row${s.done ? ' done' : ''}`} key={s.id}><span className="set-num">{si + 1}</span><span className="prev">{pw ? `${dispW(pw.weight, units)} × ${pw.reps}` : ''}</span><input className="set-input" type="number" inputMode="decimal" min="0" step="0.5" placeholder="0" value={dispW(s.weight, units) === '' ? '' : dispW(s.weight, units)} onChange={e => patchSet(ex.id, s.id, 'weight', storeW(e.target.value, units))} onKeyDown={enterNext} /><input className="set-input" type="number" inputMode="numeric" min="0" placeholder="0" value={s.reps} onChange={e => patchSet(ex.id, s.id, 'reps', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} onKeyDown={enterNext} /><input type="checkbox" checked={!!s.done} onChange={e => markDone(ex.id, s.id, e.target.checked)} />{ex.sets.length > 1 && <button className="ghost del" onClick={() => removeSet(ex.id, s.id)}>×</button>}{isPR && <span className="pr-tag">New PR!</span>}{is1PR && !isPR && <span className="pr-tag">1RM PR!</span>}</div>; })}</div>
-          <div className="row-actions"><button className="ghost" onClick={() => addSet(ex.id)}>+ Add Set</button></div>
-        </div>; })()}
-        <div className="ex-notes"><input className="set-input" placeholder={`Notes for ${ex.name} (form, grip, etc.)`} value={ex.notes} onChange={e => patchEx(ex.id, 'notes', e.target.value)} /></div>
-        <div className="rest-row"><span className="muted">Rest timer</span>{REST_PRESETS.map(s => <button key={s} className={`ghost${rest && rest.exId === ex.id && rest.total === s ? ' active' : ''}`} onClick={() => startRest(ex.id, s)}>{s}s</button>)}<button className="ghost" onClick={() => startRest(ex.id, Number(prompt('Rest seconds', '60')) || 60)}>Custom</button></div>
-      </section>; })}
-      {!active.exercises.length && <div className="panel"><p className="muted">No exercises yet — this is a blank workout. Finish it or head to the routine.</p></div>}
+      {active.exercises.length ? <section className="panel">
+        <div className="panel-head"><div><h2>Today's sets</h2><p className="muted">Boxes are pre-filled from your last {DAY_LABELS[DAY_KEYS.indexOf(dayKeyOf(active.date))]} workout — edit and mark done as you go.</p></div></div>
+        <div className="wt-wrap">
+          <div className="wt-row wt-head" style={{ gridTemplateColumns: `170px 120px repeat(${maxSets},1fr)` }}><span className="wt-ex">Exercise</span><span className="wt-prev">Last time</span>{Array.from({ length: maxSets }, (_, i) => <span className="wt-set" key={i}>Set {i + 1}</span>)}</div>
+          {active.exercises.map((ex, ei) => { const prev = prevWorkoutFor(data, active.date, ex.name) || []; const best = bestWeightBefore(data, ex.name, data.gym.workouts.length); return <div className="wt-row" data-exid={ex.id} key={ex.id} style={{ gridTemplateColumns: `170px 120px repeat(${maxSets},1fr)` }}>
+            <div className="wt-ex"><strong>{ex.name} <span className="ex-count">{ei + 1}/{active.exercises.length}</span></strong><small>{ex.muscle}{ex.equipment ? ` · ${ex.equipment}` : ''}{best ? ` · best ${dispW(best, units)} ${units}` : ''}{rest && rest.exId === ex.id ? ` · Rest ${restLeft}s` : ''}</small><div className="wt-actions"><select className="cat rest-select" value={rest && rest.exId === ex.id ? rest.total : 60} onChange={e => startRest(ex.id, Number(e.target.value))}>{REST_PRESETS.map(s => <option key={s} value={s}>{s}s rest</option>)}</select><button className="ghost" onClick={() => addSet(ex.id)}>+ Set</button><button className="ghost del" onClick={() => deleteExercise(ex.id)}>Remove</button></div></div>
+            <div className="wt-prev">{Array.from({ length: maxSets }, (_, si) => { const pw = prev[si]; return <span key={si}>{pw ? `${dispW(pw.weight, units)} × ${pw.reps}` : ''}</span>; })}</div>
+            {ex.sets.map((s, si) => { const w = Number(s.weight) || 0; const r = Number(s.reps) || 0; const isPR = w > 0 && w > best; const is1PR = w > 0 && r > 0 && epley(w, r) > best1RMBefore(data, ex.name, data.gym.workouts.length); return <div className={`wt-set${s.done ? ' done' : ''}`} key={s.id}>
+              <input className="set-input" type="number" inputMode="decimal" min="0" step="0.5" placeholder="kg" value={dispW(s.weight, units) === '' ? '' : dispW(s.weight, units)} onChange={e => patchSet(ex.id, s.id, 'weight', storeW(e.target.value, units))} onKeyDown={enterNext} />
+              <input className="set-input" type="number" inputMode="numeric" min="0" placeholder="reps" value={s.reps} onChange={e => patchSet(ex.id, s.id, 'reps', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} onKeyDown={enterNext} />
+              <div className="wt-set-foot"><input type="checkbox" checked={!!s.done} onChange={e => markDone(ex.id, s.id, e.target.checked)} />{ex.sets.length > 1 && <button className="ghost del" onClick={() => removeSet(ex.id, s.id)}>×</button>}{isPR && <span className="pr-tag">PR</span>}{is1PR && !isPR && <span className="pr-tag">1RM PR</span>}</div>
+            </div>; })}
+            {Array.from({ length: Math.max(0, maxSets - ex.sets.length) }, (_, i) => <div className="wt-set empty" key={'pad' + i} />)}
+          </div>; })}
+        </div>
+      </section> : <div className="panel"><p className="muted">No exercises yet — this is a blank workout. Finish it or head to the routine.</p></div>}
     </>}
 
     {view === 'Start Workout' && !active && <div className="panel start-panel">
       <div className="panel-head"><div><h2>{DAY_LABELS[DAY_KEYS.indexOf(todayDay)]} · {fmtDate(today())}</h2><p className="muted">{todayPlan.length ? `${focusFor(todayPlan)} · ${todayPlan.length} exercises · est. ${estMin(todayPlan)} min` : 'Rest day — take it easy.'}</p></div></div>
       {!todayPlan.length && <div className="rest-day"><strong>Rest Day</strong><p className="muted">Nothing scheduled today. You can still start any workout below.</p></div>}
-      <div className="start-row"><label className="log-field"><span>Start a routine</span><select className="cat" value={startDay} onChange={e => setStartDay(e.target.value)}>{DAY_KEYS.map(k => <option key={k} value={k}>{DAY_LABELS[DAY_KEYS.indexOf(k)]}{planFor(k).length ? ` (${planFor(k).length})` : ' — Rest'}</option>)}</select></label><button onClick={() => startFromDay(startDay)}>Start {DAY_LABELS[DAY_KEYS.indexOf(startDay)]} workout</button><button className="ghost" onClick={startBlank}>Blank workout</button></div>
-      <div className="plan-ex-list today">{todayPlan.map((en, i) => <div className="plan-ex" key={i}><span className="set-num">{i + 1}</span><strong>{en.name}</strong><small className="muted">{findEx(data, en.name)?.primary || ''}</small></div>)}</div>
+      <div className="start-row"><label className="log-field"><span>Start a routine</span><select className="cat" value={startDay} onChange={e => setStartDay(e.target.value)}>{DAY_KEYS.map(k => <option key={k} value={k}>{DAY_LABELS[DAY_KEYS.indexOf(k)]}{planFor(k).length ? ` (${planFor(k).length} exercises)` : ' — Rest'}</option>)}</select></label><button onClick={() => startFromDay(startDay)}>Start Workout</button><button className="ghost" onClick={startBlank}>Blank workout</button></div>
+      <div className="plan-ex-list today">{todayPlan.map((en, i) => <div className="plan-ex" key={i}><span className="set-num">{i + 1}</span><strong>{en.name}</strong><small className="muted">{findEx(data, en.name)?.primary || ''} · {en.sets.length} sets</small></div>)}</div>
     </div>}
 
     {view === 'Edit Workout / Routine' && (routineDay == null ? <div className="panel"><div className="panel-head"><div><h2>Weekly routine</h2><p className="muted">Tap a day to edit its exercises, order, and default sets.</p></div></div><div className="plan-grid">{DAY_KEYS.map(k => { const names = planFor(k); return <div className="plan-day" key={k}><div className="plan-day-head"><strong>{DAY_LABELS[DAY_KEYS.indexOf(k)]}</strong><button className="ghost" onClick={() => setRoutineDay(k)}>Edit</button></div><small className="focus">{names.length ? focusFor(names) : 'Rest'}</small><div className="plan-chips">{names.map((en, i) => <span className="plan-chip" key={i}>{en.name}</span>)}</div></div>; })}</div></div> : routineEditor())}

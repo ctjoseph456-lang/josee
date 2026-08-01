@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as XLSX from 'xlsx';
 import { addDays, Calendar, dateFromIST, today } from './lib.jsx';
-import { Gym, DEFAULT_PLAN, normalizePlan } from './gym.jsx';
+import { Gym, DEFAULT_PLAN, defaultSetsFor, normalizePlan } from './gym.jsx';
 import './styles.css';
 
 const CATEGORIES = ['Study', 'Practice', 'Break', 'Personal'];
@@ -24,7 +24,7 @@ const GYM_SEED = [
 ];
 const GYM_PLAN = DEFAULT_PLAN;
 const initial = {
-  _v: 8,
+  _v: 9,
   defaultHabits: [
     { id: 'h1', name: 'Morning revision' },
     { id: 'h2', name: 'Exercise' },
@@ -81,8 +81,16 @@ function load() {
     (d.gym.bmi || []).forEach(b => { if (b && b.height) heightHint = Number(b.height) || heightHint; if (b && Number(b.weight) && !(d.gym.bodyWeight || []).some(x => x.date === b.date && Math.abs(Number(x.weight) - Number(b.weight)) < 0.01)) d.gym.bodyWeight.push({ id: b.id || crypto.randomUUID(), date: b.date, weight: Number(b.weight), height: b.height, notes: 'BMI' }); });
     if (heightHint) d.gym.settings.height = heightHint;
     d.gym.settings.units = d.gym.settings.units || 'kg';
+    if (d._v < 9) {
+      Object.keys(d.gym.plan).forEach(k => {
+        d.gym.plan[k] = (d.gym.plan[k] || []).map(e => {
+          const isUnmodified = (e.sets && e.sets.length >= 3) && e.sets.every(s => (s.weight === '' || s.weight == null) && (s.reps === 8 || s.reps === 12));
+          return isUnmodified ? { name: e.name, sets: defaultSetsFor(e.name) } : e;
+        });
+      });
+    }
     if (!d._v) { d.defaultTimetable = CLASS_DEFAULT.map(e => ({ ...e })); }
-    d._v = 8;
+    d._v = 9;
     return d;
   } catch { return initial; }
 }
