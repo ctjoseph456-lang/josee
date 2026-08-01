@@ -97,7 +97,7 @@ function load() {
 function save(data) { localStorage.setItem('study-dashboard-data', JSON.stringify(data)); }
 const effectiveHabitsFor = (data, d) => {
   let best = null;
-  (data.habitDefaults || []).forEach(en => { if (en.from <= d && (!best || en.from > best.from)) best = en; });
+  (data.habitDefaults || []).forEach(en => { if (en.from <= d && (!best || en.from >= best.from)) best = en; });
   return best ? best.habits : (data.defaultHabits || []);
 };
 function Card({ title, value, note, children }) { return <section className="card"><p className="eyebrow">{title}</p><strong className="metric">{value}</strong>{note && <p className="muted">{note}</p>}{children}</section>; }
@@ -146,7 +146,7 @@ function App() {
   const patchHabitDraft = (id, name) => setHabitDraft(habitDraft.map(h => h.id === id ? { ...h, name } : h));
   const removeHabitDraft = (id) => setHabitDraft(habitDraft.filter(h => h.id !== id));
   const addHabitField = (e) => { e.preventDefault(); if (!newHabit.trim()) return; setHabitDraft([...habitDraft, { id: crypto.randomUUID(), name: newHabit.trim() }]); setNewHabit(''); };
-  const saveHabits = () => { const list = habitDraft.filter(h => h.name.trim()).map(h => ({ id: h.id, name: h.name.trim() })); update({ ...data, defaultHabits: list, habitDefaults: [...(data.habitDefaults || []), { from: date, habits: list }] }); setEditingHabits(false); };
+  const saveHabits = () => { const list = habitDraft.filter(h => h.name.trim()).map(h => ({ id: h.id, name: h.name.trim() })); update({ ...data, defaultHabits: list, habitDefaults: [...(data.habitDefaults || []).filter(x => x.from !== date), { from: date, habits: list }] }); setEditingHabits(false); };
   const importFile = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
