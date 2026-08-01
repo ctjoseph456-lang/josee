@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as XLSX from 'xlsx';
 import { addDays, Calendar, dateFromIST, today } from './lib.jsx';
-import { Gym, DEFAULT_PLAN } from './gym.jsx';
+import { Gym, DEFAULT_PLAN, normalizePlan } from './gym.jsx';
 import './styles.css';
 
 const CATEGORIES = ['Study', 'Practice', 'Break', 'Personal'];
@@ -24,7 +24,7 @@ const GYM_SEED = [
 ];
 const GYM_PLAN = DEFAULT_PLAN;
 const initial = {
-  _v: 7,
+  _v: 8,
   defaultHabits: [
     { id: 'h1', name: 'Morning revision' },
     { id: 'h2', name: 'Exercise' },
@@ -43,7 +43,7 @@ const initial = {
   dayOff: {},
   dayTimetables: {},
   completed: {},
-  gym: { workouts: [], bodyWeight: [], templates: GYM_SEED, plan: JSON.parse(JSON.stringify(GYM_PLAN)), favorites: [], recent: [], custom: [], bmi: [], settings: { units: 'kg', dark: false } }
+  gym: { workouts: [], bodyWeight: [], templates: GYM_SEED, plan: JSON.parse(JSON.stringify(GYM_PLAN)), favorites: [], recent: [], custom: [], bmi: [], settings: { units: 'kg', dark: false, height: '' } }
 };
 function load() {
   try {
@@ -70,13 +70,19 @@ function load() {
     d.gym.bodyWeight = d.gym.bodyWeight || [];
     d.gym.templates = (d.gym.templates && d.gym.templates.length ? d.gym.templates : GYM_SEED);
     d.gym.settings = d.gym.settings || { units: 'kg', dark: false };
-    d.gym.plan = d.gym.plan && d.gym.plan.monday ? d.gym.plan : JSON.parse(JSON.stringify(GYM_PLAN));
+    d.gym.settings.height = d.gym.settings.height || '';
+    d.gym.plan = normalizePlan(d.gym.plan || {});
     d.gym.favorites = d.gym.favorites || [];
     d.gym.recent = d.gym.recent || [];
     d.gym.custom = d.gym.custom || [];
     d.gym.bmi = d.gym.bmi || [];
+    let heightHint = Number(d.gym.settings.height) || 0;
+    (d.gym.bodyWeight || []).forEach(x => { if (x.height) heightHint = Number(x.height) || heightHint; });
+    (d.gym.bmi || []).forEach(b => { if (b && b.height) heightHint = Number(b.height) || heightHint; if (b && Number(b.weight) && !(d.gym.bodyWeight || []).some(x => x.date === b.date && Math.abs(Number(x.weight) - Number(b.weight)) < 0.01)) d.gym.bodyWeight.push({ id: b.id || crypto.randomUUID(), date: b.date, weight: Number(b.weight), height: b.height, notes: 'BMI' }); });
+    if (heightHint) d.gym.settings.height = heightHint;
+    d.gym.settings.units = d.gym.settings.units || 'kg';
     if (!d._v) { d.defaultTimetable = CLASS_DEFAULT.map(e => ({ ...e })); }
-    d._v = 7;
+    d._v = 8;
     return d;
   } catch { return initial; }
 }
