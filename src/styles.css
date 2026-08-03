@@ -29,3 +29,8 @@
 :root.dark .start-now{background:var(--leaf);border-color:var(--leaf)}:root.dark .start-now-wrap .ghost{background:#161d18;border-color:var(--line)}:root.dark .start-pick .log-field select{background:#1a231c}
 .hist-head{display:flex;justify-content:space-between;align-items:start;gap:10px}.hist-head div{display:grid;gap:2px}.hist-head .ghost{padding:5px 10px;font:12px Manrope}.hist-sum{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px}.hist-sum span{font:11px 'DM Mono',monospace;color:var(--muted);background:#eef0e9;border-radius:6px;padding:3px 7px}.hist-notes{font:12px Manrope;color:var(--muted);font-style:italic;margin:6px 0 2px}.hist-exes{display:grid;gap:8px;margin-top:10px}.hist-ex small{font-size:11px}.hist-sets{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}.hist-sets span{font:12px 'DM Mono',monospace;color:var(--ink);background:#f3f8f1;border:1px solid var(--line);border-radius:7px;padding:3px 8px}
 :root.dark .hist-sum span{background:#26332b;color:#92a298}:root.dark .hist-sets span{background:#1a231c;border-color:var(--line);color:var(--ink)}
+:root.dark .gym-nav button,:root.dark .gym-modal,:root.dark .pr-item,:root.dark .subj-form input{background:#161d18}
+:root.dark .ghost:hover,:root.dark .cal-cell:hover{background:#26332b}
+:root.dark .cal-cell.mark{background:#2c4a38}
+:root.dark .cal-cell.mark span::after{background:#161d18}
+.schedule.editing{grid-template-columns:18px 58px 12px 1fr auto}.drag-handle{color:var(--muted);cursor:grab;font-size:15px;user-select:none;display:grid;place-items:center}.drag-handle:active{cursor:grabbing}.schedule.editing .drag-handle:hover{color:var(--leaf)}
